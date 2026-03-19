@@ -6,6 +6,7 @@ package dev.rstminecraft;
 
 //文件解释：本文件为模组主文件。
 
+import baritone.api.BaritoneAPI;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import dev.rstminecraft.utils.MsgLevel;
 import dev.rstminecraft.utils.RSTMsgSender;
@@ -20,10 +21,13 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -50,6 +54,7 @@ public class RustElytraClient implements ClientModInitializer {
 
     // timer mixin相关
     public static float timerMultiplier = 1f;
+    private static final String AUTO_ELYTRA_USAGE = "/RSTAutoElytra [elytra|xp] [x] [z]";
 
     @Override
     public void onInitializeClient() {
@@ -95,19 +100,45 @@ public class RustElytraClient implements ClientModInitializer {
             return 1;
         })));
         // 命令开启飞行，不推荐，优先使用GUI
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(ClientCommandManager.literal("RSTAutoElytra").then(ClientCommandManager.argument("x", IntegerArgumentType.integer()).then(ClientCommandManager.argument("z", IntegerArgumentType.integer()).executes(context -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player == null) {
-                return 0;
-            }
-            int targetX = IntegerArgumentType.getInteger(context, "x");
-            int targetZ = IntegerArgumentType.getInteger(context, "z");
-
-            if (TaskThread.getModThread() != null) return 0;
-            MsgSender.SendMsg(client.player, "任务开始！", MsgLevel.warning);
-            TaskThread.StartModThread_ELY(getBoolean("isAutoLog", true), getBoolean("isAutoLogOnSeg1", false), targetX, targetZ);
-            return 1;
-        })))));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(ClientCommandManager.literal("RSTAutoElytra")
+                .executes(context -> {
+                    MinecraftClient client = MinecraftClient.getInstance();
+                    return tryStartElytraTaskFromGoal(client, FlightMode.ELYTRA) ? 1 : 0;
+                })
+                .then(ClientCommandManager.literal("elytra")
+                        .executes(context -> {
+                            MinecraftClient client = MinecraftClient.getInstance();
+                            return tryStartElytraTaskFromGoal(client, FlightMode.ELYTRA) ? 1 : 0;
+                        })
+                        .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                                .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                        .executes(context -> {
+                                            MinecraftClient client = MinecraftClient.getInstance();
+                                            int targetX = IntegerArgumentType.getInteger(context, "x");
+                                            int targetZ = IntegerArgumentType.getInteger(context, "z");
+                                            return tryStartElytraTask(client, targetX, targetZ, FlightMode.ELYTRA, false) ? 1 : 0;
+                                        }))))
+                .then(ClientCommandManager.literal("xp")
+                        .executes(context -> {
+                            MinecraftClient client = MinecraftClient.getInstance();
+                            return tryStartElytraTaskFromGoal(client, FlightMode.XP) ? 1 : 0;
+                        })
+                        .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                                .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                        .executes(context -> {
+                                            MinecraftClient client = MinecraftClient.getInstance();
+                                            int targetX = IntegerArgumentType.getInteger(context, "x");
+                                            int targetZ = IntegerArgumentType.getInteger(context, "z");
+                                            return tryStartElytraTask(client, targetX, targetZ, FlightMode.XP, false) ? 1 : 0;
+                                        }))))
+                .then(ClientCommandManager.argument("x", IntegerArgumentType.integer())
+                        .then(ClientCommandManager.argument("z", IntegerArgumentType.integer())
+                                .executes(context -> {
+                                    MinecraftClient client = MinecraftClient.getInstance();
+                                    int targetX = IntegerArgumentType.getInteger(context, "x");
+                                    int targetZ = IntegerArgumentType.getInteger(context, "z");
+                                    return tryStartElytraTask(client, targetX, targetZ, FlightMode.ELYTRA, false) ? 1 : 0;
+                                })))));
 
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
@@ -120,6 +151,112 @@ public class RustElytraClient implements ClientModInitializer {
 
     enum ModStatuses {
         idle, running, canceled
+    }
+
+    private static boolean tryStartElytraTaskFromGoal(@NotNull MinecraftClient client, @NotNull FlightMode mode) {
+        int[] goalXZ = resolveBaritoneGoalXZ();
+        if (goalXZ == null) {
+            if (client.player != null) {
+                MsgSender.SendMsg(client.player, "未找到可用的 Baritone 坐标目标，请先设置 goal。用法: " + AUTO_ELYTRA_USAGE, MsgLevel.warning);
+            }
+            return false;
+        }
+        return tryStartElytraTask(client, goalXZ[0], goalXZ[1], mode, true);
+    }
+
+    private static boolean tryStartElytraTask(@NotNull MinecraftClient client, int targetX, int targetZ, @NotNull FlightMode mode, boolean fromBaritoneGoal) {
+        if (client.player == null) {
+            return false;
+        }
+        if (TaskThread.getModThread() != null) {
+            MsgSender.SendMsg(client.player, "已有任务正在运行", MsgLevel.warning);
+            return false;
+        }
+        if (fromBaritoneGoal) {
+            MsgSender.SendMsg(client.player, "无坐标模式：使用 Baritone goal 坐标 X=" + targetX + " Z=" + targetZ + "，模式=" + mode.displayName, MsgLevel.info);
+        }
+        MsgSender.SendMsg(client.player, "任务开始！", MsgLevel.warning);
+        if (mode == FlightMode.XP) {
+            TaskThread.StartModThread_XP(getBoolean("isAutoLog", true), getBoolean("isAutoLogOnSeg1", false), targetX, targetZ);
+        } else {
+            TaskThread.StartModThread_ELY(getBoolean("isAutoLog", true), getBoolean("isAutoLogOnSeg1", false), targetX, targetZ);
+        }
+        return true;
+    }
+
+    private enum FlightMode {
+        ELYTRA("elytra"),
+        XP("xp");
+
+        private final String displayName;
+
+        FlightMode(String displayName) {
+            this.displayName = displayName;
+        }
+    }
+
+    private static int[] resolveBaritoneGoalXZ() {
+        Object primaryBaritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+        if (primaryBaritone == null) {
+            return null;
+        }
+        Object customGoalProcess = invokeNoArg(primaryBaritone, "getCustomGoalProcess");
+        if (customGoalProcess == null) {
+            return null;
+        }
+        Object goal = invokeNoArg(customGoalProcess, "getGoal");
+        if (goal == null) {
+            goal = invokeNoArg(customGoalProcess, "mostRecentGoal");
+        }
+        if (goal == null) {
+            return null;
+        }
+
+        Integer x = readGoalCoordinate(goal, "X");
+        Integer z = readGoalCoordinate(goal, "Z");
+        if (x == null || z == null) {
+            return null;
+        }
+        return new int[]{x, z};
+    }
+
+    private static @Nullable Integer readGoalCoordinate(@NotNull Object goal, @NotNull String axisNameUpper) {
+        Object value = invokeNoArg(goal, "get" + axisNameUpper);
+        if (value == null) {
+            value = invokeNoArg(goal, axisNameUpper.toLowerCase());
+        }
+        if (!(value instanceof Integer)) {
+            value = readField(goal, axisNameUpper.toLowerCase());
+        }
+        if (!(value instanceof Integer)) {
+            value = readField(goal, axisNameUpper);
+        }
+        return value instanceof Integer integerValue ? integerValue : null;
+    }
+
+    private static @Nullable Object invokeNoArg(@NotNull Object target, @NotNull String methodName) {
+        try {
+            Method method = target.getClass().getMethod(methodName);
+            return method.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static @Nullable Object readField(@NotNull Object target, @NotNull String fieldName) {
+        Class<?> type = target.getClass();
+        while (type != null) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                type = type.getSuperclass();
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     public static class TaskHolder<T> {
