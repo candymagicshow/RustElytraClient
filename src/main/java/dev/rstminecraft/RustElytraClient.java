@@ -43,6 +43,7 @@ public class RustElytraClient implements ClientModInitializer {
     public static final AtomicReference<TaskHolder<?>> currentTask = new AtomicReference<>();
     static final Object ThreadLock = new Object();
     public static int currentTick = 0;
+    private static int lastStaleTaskWarnTick = Integer.MIN_VALUE;
     static RSTMsgSender MsgSender;
     static @NotNull ModStatuses ModStatus = ModStatuses.idle;
     private static KeyBinding openCustomScreenKey;
@@ -76,14 +77,22 @@ public class RustElytraClient implements ClientModInitializer {
                 }
                 try {
                     while (TaskThread.getModThread() != null && !(TaskThread.getModThread().getState() == Thread.State.TERMINATED || TaskThread.getModThread().getState() == Thread.State.TIMED_WAITING)) {
-                        TaskHolder<?> task = currentTask.get();
+                        // Atomically claim currentTask to avoid a tiny race where latch is released before clear.
+                        TaskHolder<?> task = currentTask.getAndSet(null);
                         if (task != null) {
+                            MODLOGGER.info("[RST TaskTrace] tick={} executing holder={} modThread={}({})", currentTick, task.debugId(), TaskThread.getModThread().getName(), TaskThread.getModThread().getState());
                             task.execute();
-                            currentTask.set(null);
+                            MODLOGGER.info("[RST TaskTrace] tick={} finished holder={}", currentTick, task.debugId());
                         }
                     }
                 } catch (NullPointerException e) {
                     if (!e.getMessage().contains("TaskThread.getState")) throw e;
+                }
+            } else {
+                TaskHolder<?> staleTask = currentTask.get();
+                if (staleTask != null && currentTick - lastStaleTaskWarnTick >= 20) {
+                    lastStaleTaskWarnTick = currentTick;
+                    MODLOGGER.warn("[RST TaskTrace] tick={} stale currentTask detected while ModThread=null holder={}", currentTick, staleTask.debugId());
                 }
             }
             tick();
@@ -283,6 +292,18 @@ public class RustElytraClient implements ClientModInitializer {
         T getResult() {
             if (error != null) throw new TaskThread.TaskException(error.getMessage());
             return result;
+        }
+
+        int debugId() {
+            return System.identityHashCode(this);
+        }
+
+        long debugLatchCount() {
+            return latch.getCount();
+        }
+
+        boolean hasError() {
+            return error != null;
         }
     }
 }

@@ -58,6 +58,16 @@ public class TaskThread extends Thread {
         return ModThread != null;
     }
 
+    private static @NotNull String threadDesc(@Nullable Thread thread) {
+        if (thread == null) return "null";
+        return thread.getName() + "#" + thread.getId() + "/" + thread.getState();
+    }
+
+    private static @NotNull String holderDesc(@Nullable TaskHolder<?> holder) {
+        if (holder == null) return "null";
+        return holder.debugId() + "(latch=" + holder.debugLatchCount() + ",error=" + holder.hasError() + ")";
+    }
+
     /**
      * 启动一个新鞘翅补给模式的任务
      *
@@ -67,8 +77,15 @@ public class TaskThread extends Thread {
      * @param TargetZ         目标Z坐标
      */
     public static void StartModThread_ELY(boolean isAutoLog, boolean isAutoLogOnSeg1, int TargetX, int TargetZ) {
-        ModThread = new TaskThread(false, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
-        ModThread.start();
+        TaskThread oldThread = ModThread;
+        if (oldThread != null) {
+            MODLOGGER.warn("[RST TaskTrace] StartModThread_ELY replacing existing thread old={} target=({}, {})", threadDesc(oldThread), TargetX, TargetZ);
+        }
+        TaskThread newThread = new TaskThread(false, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
+        newThread.setName("RST-ELY-" + System.nanoTime());
+        ModThread = newThread;
+        MODLOGGER.info("[RST TaskTrace] StartModThread_ELY new={} target=({}, {})", threadDesc(newThread), TargetX, TargetZ);
+        newThread.start();
     }
 
     /**
@@ -80,8 +97,15 @@ public class TaskThread extends Thread {
      * @param TargetZ         目标Z坐标
      */
     public static void StartModThread_XP(boolean isAutoLog, boolean isAutoLogOnSeg1, int TargetX, int TargetZ) {
-        ModThread = new TaskThread(true, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
-        ModThread.start();
+        TaskThread oldThread = ModThread;
+        if (oldThread != null) {
+            MODLOGGER.warn("[RST TaskTrace] StartModThread_XP replacing existing thread old={} target=({}, {})", threadDesc(oldThread), TargetX, TargetZ);
+        }
+        TaskThread newThread = new TaskThread(true, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
+        newThread.setName("RST-XP-" + System.nanoTime());
+        ModThread = newThread;
+        MODLOGGER.info("[RST TaskTrace] StartModThread_XP new={} target=({}, {})", threadDesc(newThread), TargetX, TargetZ);
+        newThread.start();
     }
 
     /**
@@ -118,34 +142,34 @@ public class TaskThread extends Thread {
      * @return 运行结果, 类型不定
      */
     public static <T> T RunAsMainThread(Supplier<T> lambda) {
-        if (Thread.currentThread() != ModThread) return lambda.get();
-
-        CountDownLatch latch = new CountDownLatch(1);
-        TaskHolder<T> holder = new TaskHolder<>(lambda, latch);
-
-        if (!currentTask.compareAndSet(null, holder)) {
-            throw new TaskException("同时只能存在一个任务");
-        }
-        try {
-            latch.await();
-            return holder.getResult();
-        } catch (InterruptedException e) {
-            throw new TaskException("任务执行异常");
-        }
+        return runAsMainThreadInternal(lambda, "RunAsMainThread");
     }
     public static <T> T RunAsMainThread2(Supplier<T> lambda) {
-        if (Thread.currentThread() != ModThread) return lambda.get();
+        return runAsMainThreadInternal(lambda, "RunAsMainThread2");
+    }
+
+    private static <T> T runAsMainThreadInternal(Supplier<T> lambda, @NotNull String apiName) {
+        if (Thread.currentThread() != ModThread) {
+            return lambda.get();
+        }
 
         CountDownLatch latch = new CountDownLatch(1);
         TaskHolder<T> holder = new TaskHolder<>(lambda, latch);
+        TaskHolder<?> existing = currentTask.get();
+        MODLOGGER.info("[RST TaskTrace] {} queue-attempt caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(existing), holderDesc(holder));
 
         if (!currentTask.compareAndSet(null, holder)) {
+            MODLOGGER.error("[RST TaskTrace] {} queue-failed caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(currentTask.get()), holderDesc(holder));
             throw new TaskException("同时只能存在一个任务");
         }
         try {
+            MODLOGGER.info("[RST TaskTrace] {} queued holder={}, waiting", apiName, holderDesc(holder));
             latch.await();
+            MODLOGGER.info("[RST TaskTrace] {} resumed holder={}, currentTaskNow={}", apiName, holderDesc(holder), holderDesc(currentTask.get()));
             return holder.getResult();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            MODLOGGER.error("[RST TaskTrace] {} interrupted holder={}", apiName, holderDesc(holder), e);
             throw new TaskException("任务执行异常");
         }
     }
@@ -193,10 +217,23 @@ public class TaskThread extends Thread {
      */
     @Override
     public void run() {
-        RealRun();
-        timerMultiplier = 1;
-        cameraMixinSwitch = false;
-        ModThread = null;
+        MODLOGGER.info("[RST TaskTrace] run-enter thread={} target=({}, {}) mode={}", threadDesc(this), TargetX, TargetZ, isXP ? "xp" : "elytra");
+        try {
+            RealRun();
+        } finally {
+            timerMultiplier = 1;
+            cameraMixinSwitch = false;
+            if (ModThread == this) {
+                ModThread = null;
+                MODLOGGER.info("[RST TaskTrace] run-exit cleared ModThread for {}", threadDesc(this));
+            } else {
+                MODLOGGER.warn("[RST TaskTrace] run-exit thread mismatch exitThread={} currentModThread={}", threadDesc(this), threadDesc(ModThread));
+            }
+            TaskHolder<?> pending = currentTask.get();
+            if (pending != null) {
+                MODLOGGER.warn("[RST TaskTrace] run-exit found pending holder={} with modThread={}", holderDesc(pending), threadDesc(ModThread));
+            }
+        }
     }
 
     /**
