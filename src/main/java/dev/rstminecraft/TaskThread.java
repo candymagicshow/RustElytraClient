@@ -156,16 +156,16 @@ public class TaskThread extends Thread {
         CountDownLatch latch = new CountDownLatch(1);
         TaskHolder<T> holder = new TaskHolder<>(lambda, latch);
         TaskHolder<?> existing = currentTask.get();
-        MODLOGGER.info("[RST TaskTrace] {} queue-attempt caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(existing), holderDesc(holder));
+        //MODLOGGER.info("[RST TaskTrace] {} queue-attempt caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(existing), holderDesc(holder));
 
         if (!currentTask.compareAndSet(null, holder)) {
-            MODLOGGER.error("[RST TaskTrace] {} queue-failed caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(currentTask.get()), holderDesc(holder));
+            //MODLOGGER.error("[RST TaskTrace] {} queue-failed caller={} modThread={} existing={} newHolder={}", apiName, threadDesc(Thread.currentThread()), threadDesc(ModThread), holderDesc(currentTask.get()), holderDesc(holder));
             throw new TaskException("同时只能存在一个任务");
         }
         try {
-            MODLOGGER.info("[RST TaskTrace] {} queued holder={}, waiting", apiName, holderDesc(holder));
+            //MODLOGGER.info("[RST TaskTrace] {} queued holder={}, waiting", apiName, holderDesc(holder));
             latch.await();
-            MODLOGGER.info("[RST TaskTrace] {} resumed holder={}, currentTaskNow={}", apiName, holderDesc(holder), holderDesc(currentTask.get()));
+            //MODLOGGER.info("[RST TaskTrace] {} resumed holder={}, currentTaskNow={}", apiName, holderDesc(holder), holderDesc(currentTask.get()));
             return holder.getResult();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
