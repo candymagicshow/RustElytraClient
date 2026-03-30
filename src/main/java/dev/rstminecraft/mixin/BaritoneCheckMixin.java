@@ -1,7 +1,6 @@
 package dev.rstminecraft.mixin;
 
 import dev.rstminecraft.NoBaritone;
-import dev.rstminecraft.RustElytraClient;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -37,16 +36,6 @@ public class BaritoneCheckMixin extends Screen {
         if (!hasAPI) {
             MinecraftClient.getInstance().setScreen(new NoBaritone(NoBaritone.NoBaritoneReason.NoAPI, true));
             return;
-        }
-
-        if (!RustElytraClient.isPausedMixinSuccess) {
-            MinecraftClient.getInstance().setScreen(new NoBaritone(NoBaritone.NoBaritoneReason.PausedMixinFailed, true));
-            return;
-
-        }
-
-        if (!RustElytraClient.isLookMixinSuccess) {
-            MinecraftClient.getInstance().setScreen(new NoBaritone(NoBaritone.NoBaritoneReason.LookMixinFailed, true));
         }
     }
 }

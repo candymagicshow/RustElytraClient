@@ -4,8 +4,7 @@
   "compatibilityLevel": "JAVA_17",
   "mixins": [
     "BaritoneCheckMixin",
-    "BaritoneUpdateTarget",
-    "PausedTestMixin"
+    "BaritoneUpdateTarget"
   ],
   "priority": 10,
   "plugin": "dev.rstminecraft.mixin.RstMixinPlugin",

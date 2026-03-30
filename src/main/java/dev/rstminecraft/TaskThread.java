@@ -25,15 +25,6 @@ public class TaskThread extends Thread {
     private final boolean isAutoLog, isAutoLogOnSeg1;
     private final boolean isXP;
 
-    /**
-     * private的构造函数，用于阻止本class外的函数新建Mod线程，即只有零个/一个Mod线程（单例模式）
-     *
-     * @param isXP            是否需要XP补给
-     * @param isAutoLog       是否自动退出
-     * @param isAutoLogOnSeg1 是否在第一段自动退出
-     * @param TargetX         目标X坐标
-     * @param TargetZ         目标Z坐标
-     */
     private TaskThread(boolean isXP, boolean isAutoLog, boolean isAutoLogOnSeg1, int TargetX, int TargetZ) {
         this.isXP = isXP;
         this.isAutoLog = isAutoLog;
@@ -42,57 +33,49 @@ public class TaskThread extends Thread {
         this.TargetZ = TargetZ;
     }
 
-    /**
-     * 获取一个唯一的Mod线程(单例模式)
-     *
-     * @return 一个唯一的Mod线程
-     */
     public static @Nullable TaskThread getModThread() {
         return ModThread;
     }
 
-    /**
-     * 返回模组线程是否在运行，即Mod是否在工作
-     *
-     * @return 是否在运行
-     */
     public static boolean isThreadRunning() {
         return ModThread != null;
     }
 
-    /**
-     * 启动一个新鞘翅补给模式的任务
-     *
-     * @param isAutoLog       是否自动退出
-     * @param isAutoLogOnSeg1 是否在第一段自动退出
-     * @param TargetX         目标X坐标
-     * @param TargetZ         目标Z坐标
-     */
+    private static @NotNull String threadDesc(@Nullable Thread thread) {
+        if (thread == null) {
+            return "null";
+        }
+        return thread.getName() + "#" + thread.getId() + "/" + thread.getState();
+    }
+
     public static void StartModThread_ELY(boolean isAutoLog, boolean isAutoLogOnSeg1, int TargetX, int TargetZ) {
-        ModThread = new TaskThread(false, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
-        ModThread.start();
+        TaskThread oldThread = ModThread;
+        if (oldThread != null) {
+            MODLOGGER.warn("[RST TaskTrace] StartModThread_ELY replacing existing thread old={} target=({}, {})", threadDesc(oldThread), TargetX, TargetZ);
+        }
+        TaskThread newThread = new TaskThread(false, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
+        newThread.setName("RST-ELY-" + System.nanoTime());
+        ModThread = newThread;
+        MODLOGGER.info("[RST TaskTrace] StartModThread_ELY new={} target=({}, {})", threadDesc(newThread), TargetX, TargetZ);
+        newThread.start();
     }
 
-    /**
-     * 启动一个附魔之瓶补给模式的任务
-     *
-     * @param isAutoLog       是否自动退出
-     * @param isAutoLogOnSeg1 是否在第一段自动退出
-     * @param TargetX         目标X坐标
-     * @param TargetZ         目标Z坐标
-     */
     public static void StartModThread_XP(boolean isAutoLog, boolean isAutoLogOnSeg1, int TargetX, int TargetZ) {
-        ModThread = new TaskThread(true, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
-        ModThread.start();
+        TaskThread oldThread = ModThread;
+        if (oldThread != null) {
+            MODLOGGER.warn("[RST TaskTrace] StartModThread_XP replacing existing thread old={} target=({}, {})", threadDesc(oldThread), TargetX, TargetZ);
+        }
+        TaskThread newThread = new TaskThread(true, isAutoLog, isAutoLogOnSeg1, TargetX, TargetZ);
+        newThread.setName("RST-XP-" + System.nanoTime());
+        ModThread = newThread;
+        MODLOGGER.info("[RST TaskTrace] StartModThread_XP new={} target=({}, {})", threadDesc(newThread), TargetX, TargetZ);
+        newThread.start();
     }
 
-    /**
-     * 用于在Mod线程中延迟几个tick
-     *
-     * @param ticks 需要延迟的tick数
-     */
     public static void delay(int ticks) {
-        if (!(Thread.currentThread() instanceof TaskThread)) return;
+        if (!(Thread.currentThread() instanceof TaskThread)) {
+            return;
+        }
         if (ModStatus == ModStatuses.canceled) {
             RunAsMainThread(() -> BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute("stop"));
             MinecraftClient.getInstance().options.forwardKey.setPressed(false);
@@ -110,33 +93,18 @@ public class TaskThread extends Thread {
         }
     }
 
-    /**
-     * 在主线程(MC Render Thread)运行一个lambda(无参数,不定类型返回值)
-     * 会在lambda执行完之前阻塞
-     * 用于规避一些API必须在主线程执行
-     *
-     * @param lambda 一个lambda(无参数,不定类型返回值)
-     * @param <T>    一个不定类型
-     * @return 运行结果, 类型不定
-     */
     public static <T> T RunAsMainThread(@NotNull Supplier<T> lambda) {
-        if (Thread.currentThread() != ModThread) return lambda.get();
-
-        CountDownLatch latch = new CountDownLatch(1);
-        TaskHolder<T> holder = new TaskHolder<>(lambda, latch);
-
-        if (!currentTask.compareAndSet(null, holder)) {
-            throw new TaskException("同时只能存在一个任务");
-        }
-        try {
-            latch.await();
-            return holder.getResult();
-        } catch (InterruptedException e) {
-            throw new TaskException("任务执行异常");
-        }
+        return runAsMainThreadInternal(lambda);
     }
+
     public static <T> T RunAsMainThread2(@NotNull Supplier<T> lambda) {
-        if (Thread.currentThread() != ModThread) return lambda.get();
+        return runAsMainThreadInternal(lambda);
+    }
+
+    private static <T> T runAsMainThreadInternal(@NotNull Supplier<T> lambda) {
+        if (Thread.currentThread() != ModThread) {
+            return lambda.get();
+        }
 
         CountDownLatch latch = new CountDownLatch(1);
         TaskHolder<T> holder = new TaskHolder<>(lambda, latch);
@@ -148,15 +116,11 @@ public class TaskThread extends Thread {
             latch.await();
             return holder.getResult();
         } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new TaskException("任务执行异常");
         }
     }
 
-    /**
-     * 用于在主线程执行一个无参数无返回值的lambda(Runnable)
-     *
-     * @param lambda 一个无参数无返回值的lambda(Runnable)
-     */
     public static void RunAsMainThread(@NotNull Runnable lambda) {
         RunAsMainThread(() -> {
             lambda.run();
@@ -164,21 +128,15 @@ public class TaskThread extends Thread {
         });
     }
 
-    /**
-     * 任务失败处理函数
-     *
-     * @param client 客户端对象
-     * @param str    失败原因
-     * @param seg    当前段数
-     */
     public void taskFailed(@NotNull MinecraftClient client, @NotNull String str, int seg) {
         MinecraftClient.getInstance().options.forwardKey.setPressed(false);
         MinecraftClient.getInstance().options.jumpKey.setPressed(false);
         MinecraftClient.getInstance().options.useKey.setPressed(false);
 
-        if (BaritoneAPI.getProvider().getPrimaryBaritone().getElytraProcess().isActive() ||
-                BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive())
+        if (BaritoneAPI.getProvider().getPrimaryBaritone().getElytraProcess().isActive()
+                || BaritoneAPI.getProvider().getPrimaryBaritone().getMineProcess().isActive()) {
             RunAsMainThread(() -> BaritoneAPI.getProvider().getPrimaryBaritone().getCommandManager().execute("stop"));
+        }
         if (seg == -1 && isAutoLogOnSeg1 || seg != -1 && isAutoLog) {
             MutableText text = Text.literal("[RSTAutoLog] ");
             text.append(Text.literal(str));
@@ -191,32 +149,35 @@ public class TaskThread extends Thread {
         ModStatus = ModStatuses.idle;
     }
 
-    /**
-     * ModThread运行函数，RealRun运行完后将ModThread设置为null，残余线程被gc清理
-     */
     @Override
     public void run() {
-        RealRun();
-        timerMultiplier = 1;
-        cameraMixinSwitch = false;
-        ModThread = null;
+        MODLOGGER.info("[RST TaskTrace] run-enter thread={} target=({}, {}) mode={}", threadDesc(this), TargetX, TargetZ, isXP ? "xp" : "elytra");
+        try {
+            RealRun();
+        } finally {
+            timerMultiplier = 1;
+            cameraMixinSwitch = false;
+            if (ModThread == this) {
+                ModThread = null;
+                MODLOGGER.info("[RST TaskTrace] run-exit cleared ModThread for {}", threadDesc(this));
+            } else {
+                MODLOGGER.warn("[RST TaskTrace] run-exit thread mismatch exitThread={} currentModThread={}", threadDesc(this), threadDesc(ModThread));
+            }
+        }
     }
 
-    /**
-     * 主逻辑。依次调用SupplyTask、ElytraTask
-     */
     private void RealRun() {
-
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null) return;
+        if (client == null || client.player == null) {
+            return;
+        }
         ModStatus = ModStatuses.running;
         for (int nowSeg = 0; ; nowSeg++) {
             try {
                 MsgSender.SendMsg(client.player, "第" + nowSeg + "段补给任务开始！", MsgLevel.info);
-                // 先开启补给守护任务（防火球、防伤害）
                 float h = client.player.getHealth();
                 int finalNowSeg = nowSeg;
-                RSTTask FireballTask = scheduleTask((self, args) -> {
+                RSTTask fireballTask = scheduleTask((self, args) -> {
                     if (!FireballProtector(client)) {
                         ModStatus = ModStatuses.canceled;
                         self.repeatTimes = 0;
@@ -231,18 +192,15 @@ public class TaskThread extends Thread {
                     }
                 }, 1, -1, 1, 100);
 
-
-                // 开启补给任务
                 try {
                     RustSupplyTask.SupplyTask(client, isXP);
-                    synchronized (FireballTask) {
-                        FireballTask.repeatTimes = -2;
+                    synchronized (fireballTask) {
+                        fireballTask.repeatTimes = -2;
                     }
                     delay(1);
                 } catch (TaskException e) {
-                    // 补给失败
-                    synchronized (FireballTask) {
-                        FireballTask.repeatTimes = -2;
+                    synchronized (fireballTask) {
+                        fireballTask.repeatTimes = -2;
                     }
                     e.printStackTrace();
                     MsgSender.SendMsg(client.player, e.getMessage(), MsgLevel.error);
@@ -250,8 +208,8 @@ public class TaskThread extends Thread {
                     taskFailed(client, "补给任务失败！自动退出！", nowSeg - 1);
                     return;
                 } catch (TaskCanceled e) {
-                    synchronized (FireballTask) {
-                        FireballTask.repeatTimes = -2;
+                    synchronized (fireballTask) {
+                        fireballTask.repeatTimes = -2;
                     }
                     MsgSender.SendMsg(client.player, "任务中止！", MsgLevel.warning);
                     return;
@@ -259,18 +217,18 @@ public class TaskThread extends Thread {
 
                 MsgSender.SendMsg(client.player, "第" + nowSeg + "段飞行任务开始！", MsgLevel.info);
 
-
-                RSTTask AutoLogTask = scheduleTask((self, args) -> {
-                    if(client.player != null && autoLogEnabled && TaskThread.isThreadRunning()){
-                        if(client.player.getHealth() < 3.5){
+                RSTTask autoLogTask = scheduleTask((self, args) -> {
+                    if (client.player != null && autoLogEnabled && TaskThread.isThreadRunning()) {
+                        if (client.player.getHealth() < 3.5) {
                             int count = 0;
-                            for(int i = 0;i<45;i++){
-                                if(client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING)
+                            for (int i = 0; i < 45; i++) {
+                                if (client.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
                                     count += client.player.getInventory().getStack(i).getCount();
+                                }
                             }
-                            if(count <= 1){
+                            if (count <= 1) {
                                 autoLogEnabled = false;
-                                setBoolean("autoLogEnabled",false);
+                                setBoolean("autoLogEnabled", false);
                                 ModStatus = ModStatuses.canceled;
                                 self.repeatTimes = 0;
                                 taskFailed(client, "AutoLog图腾数量过少且血量过低！", finalNowSeg);
@@ -278,11 +236,11 @@ public class TaskThread extends Thread {
                         }
                     }
                 }, 1, -1, 1, 100);
-                // 开启鞘翅任务
+
                 try {
                     if (RustElytraTask.ElytraTask(client, this.TargetX, this.TargetZ, isXP)) {
                         MsgSender.SendMsg(client.player, "到达目的地！圆满完成！！！", MsgLevel.warning);
-                        if(isAutoLog) {
+                        if (isAutoLog) {
                             MutableText text = Text.literal("[RSTAutoLog] ");
                             text.append(Text.literal("已经到达目的地"));
                             if (client.player != null) {
@@ -290,47 +248,44 @@ public class TaskThread extends Thread {
                             }
                         }
                         ModStatus = ModStatuses.idle;
-                        synchronized (AutoLogTask) {
-                            AutoLogTask.repeatTimes = -2;
+                        synchronized (autoLogTask) {
+                            autoLogTask.repeatTimes = -2;
                         }
                         return;
                     }
-                    synchronized (AutoLogTask) {
-                        AutoLogTask.repeatTimes = -2;
+                    synchronized (autoLogTask) {
+                        autoLogTask.repeatTimes = -2;
                     }
                     delay(1);
                 } catch (TaskException e) {
-                    // 飞行失败
                     MsgSender.SendMsg(client.player, e.getMessage(), MsgLevel.error);
                     e.printStackTrace();
                     taskFailed(client, e.getMessage(), nowSeg);
-                    synchronized (AutoLogTask) {
-                        AutoLogTask.repeatTimes = -2;
+                    synchronized (autoLogTask) {
+                        autoLogTask.repeatTimes = -2;
                     }
                     return;
                 } catch (TaskCanceled e) {
                     MsgSender.SendMsg(client.player, "任务中止！", MsgLevel.warning);
-                    synchronized (AutoLogTask) {
-                        AutoLogTask.repeatTimes = -2;
+                    synchronized (autoLogTask) {
+                        autoLogTask.repeatTimes = -2;
                     }
                     return;
                 }
             } catch (NullPointerException e) {
                 e.printStackTrace();
-                taskFailed(client,e.getMessage(),nowSeg);
+                taskFailed(client, e.getMessage(), nowSeg);
                 return;
             }
         }
     }
 
-    // 一个异常：用于表达任务异常
     public static class TaskException extends RuntimeException {
         public TaskException(String reason) {
             super(reason);
         }
     }
 
-    // 一个异常：用于表达任务中止
     public static class TaskCanceled extends RuntimeException {
         public TaskCanceled() {
             super("任务已经取消");

@@ -1,7 +1,5 @@
 package dev.rstminecraft.mixin;
 
-
-import dev.rstminecraft.RustElytraClient;
 import dev.rstminecraft.utils.BaritoneControlChecker;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
@@ -17,10 +15,4 @@ public class BaritoneUpdateTarget {
     private void updateTarget(CallbackInfo ci) {
         BaritoneControlChecker.lookFlag = true;
     }
-
-    @Inject(method = "<init>", at = @At("TAIL"), require = 0)
-    private void init(CallbackInfo ci) {
-        RustElytraClient.isLookMixinSuccess = true;
-    }
-
 }

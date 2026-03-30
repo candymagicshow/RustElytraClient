@@ -578,7 +578,7 @@ public class RustElytraTask {
         if (client.player == null) throw new TaskException("player不能为null");
         if (!BaritoneControlChecker.isControlPlayer()) {
             if (client.player.isGliding()) {
-                if (paused[0]) return;
+                if (BaritoneControlChecker.isPathPaused()) return;
                 baritoneControlCounter.accumulate();
                 if (baritoneControlCounter.getCount() > 10) {
                     flyToOpen(client);
@@ -825,7 +825,7 @@ public class RustElytraTask {
                     client.interactionManager.clickSlot(handler2.syncId, finalBottleSlot, 0, SlotActionType.PICKUP, client.player);
                     handled2.close();
                 });
-                BaritoneAPI.getProvider().getPrimaryBaritone().getElytraProcess().pathTo(new BlockPos(x, 0, z));
+                RunAsMainThread(() -> BaritoneAPI.getProvider().getPrimaryBaritone().getElytraProcess().pathTo(new BlockPos(x, 0, z)));
                 delay(15);
                 return;
             }

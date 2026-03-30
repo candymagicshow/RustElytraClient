@@ -6,7 +6,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import org.jetbrains.annotations.NotNull;
 
-
 public class NoBaritone extends Screen {
     private final NoBaritoneReason reason;
     private final boolean mustQuit;
@@ -19,22 +18,21 @@ public class NoBaritone extends Screen {
 
     @Override
     protected void init() {
-        if (mustQuit)
-            // 添加一个“退出游戏”按钮
+        if (mustQuit) {
             this.addDrawableChild(ButtonWidget.builder(Text.literal("退出游戏"), button -> {
                 if (this.client != null) {
                     this.client.scheduleStop();
                 }
             }).dimensions(this.width / 2 - 100, this.height / 2 + 20, 200, 20).build());
-        else {
+        } else {
             this.addDrawableChild(ButtonWidget.builder(Text.literal("退出游戏"), button -> {
                 if (this.client != null) {
                     this.client.scheduleStop();
                 }
             }).dimensions(this.width / 3 - 60, this.height / 2 + 20, 120, 20).build());
-            this.addDrawableChild(ButtonWidget.builder(Text.literal("退出游戏"), button -> {
+            this.addDrawableChild(ButtonWidget.builder(Text.literal("返回"), button -> {
                 if (this.client != null) {
-                    this.client.scheduleStop();
+                    this.client.setScreen(null);
                 }
             }).dimensions(this.width / 3 * 2 - 60, this.height / 2 + 20, 120, 20).build());
         }
@@ -47,26 +45,14 @@ public class NoBaritone extends Screen {
             case NoModId -> {
                 context.drawCenteredTextWithShadow(this.textRenderer, "Rust Elytra Client 未检测到 Baritone 模组！", this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
                 context.drawCenteredTextWithShadow(this.textRenderer, "请安装原生 Baritone 或 Meteor 版以运行模组！", this.width / 2, this.height / 2 - 30, 0xFFAAAAAA);
-                context.drawCenteredTextWithShadow(this.textRenderer, "手机版用户可使用BaritonePE。（详见QQ群）", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
+                context.drawCenteredTextWithShadow(this.textRenderer, "手机版用户可使用 BaritonePE。（详见QQ群）", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
             }
             case NoAPI -> {
-                context.drawCenteredTextWithShadow(this.textRenderer, "您似乎使用了错误的Baritone(Standalone版本)", this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
-                context.drawCenteredTextWithShadow(this.textRenderer, "此版本不包含可供模组调用的API,请使用API版、unoptimized版或彗星版", this.width / 2, this.height / 2 - 30, 0xFFAAAAAA);
-                context.drawCenteredTextWithShadow(this.textRenderer, "若您不确定应该用哪个版本，请使用QQ群文件中的推荐版", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
-            }
-            case LookMixinFailed -> {
-                context.drawCenteredTextWithShadow(this.textRenderer, "LookBehaviorMixin注入失败了", this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
-                context.drawCenteredTextWithShadow(this.textRenderer, "这通常是因为作者还没有适配新版本baritone", this.width / 2, this.height / 2 - 30, 0xFFAAAAAA);
-                context.drawCenteredTextWithShadow(this.textRenderer, "请在QQ群内反馈", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
-            }
-            case PausedMixinFailed -> {
-                context.drawCenteredTextWithShadow(this.textRenderer, "PausedMixin注入失败了", this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
-                context.drawCenteredTextWithShadow(this.textRenderer, "这通常是因为作者还没有适配新版本baritone", this.width / 2, this.height / 2 - 30, 0xFFAAAAAA);
-                context.drawCenteredTextWithShadow(this.textRenderer, "请在QQ群内反馈", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
+                context.drawCenteredTextWithShadow(this.textRenderer, "您似乎使用了错误的 Baritone（Standalone 版本）", this.width / 2, this.height / 2 - 50, 0xFFFFFFFF);
+                context.drawCenteredTextWithShadow(this.textRenderer, "此版本不包含可供模组调用的 API，请使用 API 版、unoptimized 版或 Meteor 版。", this.width / 2, this.height / 2 - 30, 0xFFAAAAAA);
+                context.drawCenteredTextWithShadow(this.textRenderer, "如果不确定用哪个版本，请使用群文件里的推荐版本。", this.width / 2, this.height / 2 - 10, 0xFFAAAAAA);
             }
         }
-
-
     }
 
     @Override
@@ -75,6 +61,6 @@ public class NoBaritone extends Screen {
     }
 
     public enum NoBaritoneReason {
-        NoModId, NoAPI, LookMixinFailed,PausedMixinFailed
+        NoModId, NoAPI
     }
 }
